@@ -247,7 +247,9 @@ impl WindowsTcpMonitor {
         // 如果有缺失的 PID，一次性调用 tasklist 获取所有进程
         if !missing_pids.is_empty() {
             if let Ok(output) = Command::new("tasklist").args(["/FO", "CSV", "/NH"]).output() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
+                // Windows tasklist 输出使用系统默认编码 (GBK/CP936 for Chinese Windows)
+                // 尝试将输出解码为正确的字符串
+                let stdout = Self::decode_windows_output(&output.stdout);
                 for line in stdout.lines() {
                     // 格式: "进程名","PID",...
                     let parts: Vec<&str> = line.split(',').collect();
@@ -265,6 +267,59 @@ impl WindowsTcpMonitor {
         }
 
         result
+    }
+
+    /// 解码 Windows 命令行输出（处理中文编码）
+    #[cfg(target_os = "windows")]
+    fn decode_windows_output(bytes: &[u8]) -> String {
+        // 首先尝试 UTF-8
+        if let Ok(s) = String::from_utf8(bytes.to_vec()) {
+            return s;
+        }
+
+        // 如果 UTF-8 失败，尝试使用 Windows API 转换 (GBK/CP936)
+        // 使用 MultiByteToWideChar API 将系统默认编码转换为 Unicode
+        #[cfg(target_os = "windows")]
+        {
+            // 尝试使用 MultiByteToWideChar API
+            unsafe {
+                use windows::Win32::Globalization::{MultiByteToWideChar, CP_ACP, MB_PRECOMPOSED};
+
+                // 获取需要的缓冲区大小
+                let len = MultiByteToWideChar(
+                    CP_ACP,
+                    MB_PRECOMPOSED,
+                    bytes,
+                    None,
+                );
+
+                if len > 0 {
+                    let mut wide: Vec<u16> = vec![0; len as usize];
+                    let result = MultiByteToWideChar(
+                        CP_ACP,
+                        MB_PRECOMPOSED,
+                        bytes,
+                        Some(&mut wide),
+                    );
+
+                    if result > 0 {
+                        // 移除末尾的 null
+                        while wide.last() == Some(&0) {
+                            wide.pop();
+                        }
+                        return String::from_utf16_lossy(&wide);
+                    }
+                }
+            }
+        }
+
+        // 最后回退到 lossy UTF-8
+        String::from_utf8_lossy(bytes).to_string()
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn decode_windows_output(bytes: &[u8]) -> String {
+        String::from_utf8_lossy(bytes).to_string()
     }
 
     fn parse_netstat_line(&self, line: &str) -> Option<TcpConnection> {

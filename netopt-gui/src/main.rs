@@ -312,7 +312,12 @@ impl eframe::App for NetOptApp {
 impl NetOptApp {
     /// 仪表盘视图
     fn show_dashboard(&mut self, ui: &mut egui::Ui) {
-        if self.stats.is_none() && !self.is_refreshing {
+        // 首次加载或数据过期时自动刷新
+        let should_refresh = self.stats.is_none()
+            || (self.app_config.auto_refresh
+                && self.last_refresh.elapsed() > Duration::from_secs(self.app_config.refresh_interval));
+
+        if should_refresh && !self.is_refreshing {
             self.refresh_stats_async();
         }
 
