@@ -43,6 +43,7 @@ pub enum TextKey {
     AdminGranted,
     RefreshSuccess,
     RefreshFailed,
+    Refreshing,
     AutoRefresh,
     RefreshNow,
     
@@ -170,6 +171,7 @@ impl I18n {
         texts.insert((lang, AdminGranted), "✓ 管理员");
         texts.insert((lang, RefreshSuccess), "刷新成功");
         texts.insert((lang, RefreshFailed), "刷新失败");
+        texts.insert((lang, Refreshing), "正在刷新...");
         texts.insert((lang, AutoRefresh), "自动刷新");
         texts.insert((lang, RefreshNow), "🔄 立即刷新");
 
@@ -257,6 +259,7 @@ impl I18n {
         texts.insert((lang, AdminGranted), "✓ Admin");
         texts.insert((lang, RefreshSuccess), "Refresh Success");
         texts.insert((lang, RefreshFailed), "Refresh Failed");
+        texts.insert((lang, Refreshing), "Refreshing...");
         texts.insert((lang, AutoRefresh), "Auto Refresh");
         texts.insert((lang, RefreshNow), "🔄 Refresh");
 

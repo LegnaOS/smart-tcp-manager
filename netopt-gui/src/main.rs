@@ -7,7 +7,14 @@ use netopt_core::platform::{create_monitor, create_config_manager, has_admin_pri
 use netopt_core::{SystemTcpStats, TcpState, TcpSystemConfig};
 use netopt_core::{I18n, Language, TextKey, AppConfig};
 use netopt_core::policy::{AppPolicy, ThresholdAction};
+
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant};
+
+/// 后台线程消息
+enum BgMessage {
+    StatsResult(Result<SystemTcpStats, String>),
+}
 
 fn main() -> eframe::Result<()> {
     tracing_subscriber::fmt::init();
@@ -22,8 +29,54 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Smart TCP Manager",
         options,
-        Box::new(|cc| Ok(Box::new(NetOptApp::new(cc)))),
+        Box::new(|cc| {
+            // 加载中文字体
+            setup_fonts(&cc.egui_ctx);
+            Ok(Box::new(NetOptApp::new(cc)))
+        }),
     )
+}
+
+/// 设置支持中文的字体
+fn setup_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    // 加载系统中文字体
+    #[cfg(target_os = "macos")]
+    {
+        // macOS: 使用苹方或华文黑体
+        if let Ok(font_data) = std::fs::read("/System/Library/Fonts/PingFang.ttc") {
+            fonts.font_data.insert(
+                "chinese".to_owned(),
+                egui::FontData::from_owned(font_data),
+            );
+            fonts.families.entry(egui::FontFamily::Proportional)
+                .or_default()
+                .insert(0, "chinese".to_owned());
+            fonts.families.entry(egui::FontFamily::Monospace)
+                .or_default()
+                .push("chinese".to_owned());
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Windows: 使用微软雅黑
+        if let Ok(font_data) = std::fs::read("C:\\Windows\\Fonts\\msyh.ttc") {
+            fonts.font_data.insert(
+                "chinese".to_owned(),
+                egui::FontData::from_owned(font_data),
+            );
+            fonts.families.entry(egui::FontFamily::Proportional)
+                .or_default()
+                .insert(0, "chinese".to_owned());
+            fonts.families.entry(egui::FontFamily::Monospace)
+                .or_default()
+                .push("chinese".to_owned());
+        }
+    }
+
+    ctx.set_fonts(fonts);
 }
 
 /// 应用主视图
@@ -51,6 +104,11 @@ struct NetOptApp {
     // 持久化配置
     app_config: AppConfig,
     config_dirty: bool,
+
+    // 后台刷新
+    bg_receiver: Receiver<BgMessage>,
+    bg_sender: Sender<BgMessage>,
+    is_refreshing: bool,
 }
 
 impl NetOptApp {
@@ -64,6 +122,8 @@ impl NetOptApp {
         let mut i18n = I18n::new();
         i18n.set_language(app_config.language);
 
+        let (bg_sender, bg_receiver) = channel();
+
         Self {
             current_view: View::Dashboard,
             stats: None,
@@ -74,21 +134,48 @@ impl NetOptApp {
             i18n,
             app_config,
             config_dirty: false,
+            bg_receiver,
+            bg_sender,
+            is_refreshing: false,
         }
     }
 
-    fn refresh_stats(&mut self) {
-        let monitor = create_monitor();
-        match monitor.get_system_stats() {
-            Ok(stats) => {
-                self.stats = Some(stats);
-                self.status_message = format!("{} - {}", self.i18n.t(TextKey::RefreshSuccess), platform_name());
-            }
-            Err(e) => {
-                self.status_message = format!("{}: {}", self.i18n.t(TextKey::RefreshFailed), e);
+    /// 在后台线程刷新统计数据（非阻塞）
+    fn refresh_stats_async(&mut self) {
+        if self.is_refreshing {
+            return; // 已在刷新中
+        }
+        self.is_refreshing = true;
+        self.status_message = self.i18n.t(TextKey::Refreshing).to_string();
+
+        let sender = self.bg_sender.clone();
+        std::thread::spawn(move || {
+            let monitor = create_monitor();
+            let result = monitor.get_system_stats()
+                .map_err(|e| e.to_string());
+            let _ = sender.send(BgMessage::StatsResult(result));
+        });
+    }
+
+    /// 处理后台消息
+    fn process_bg_messages(&mut self) {
+        while let Ok(msg) = self.bg_receiver.try_recv() {
+            match msg {
+                BgMessage::StatsResult(result) => {
+                    self.is_refreshing = false;
+                    self.last_refresh = Instant::now();
+                    match result {
+                        Ok(stats) => {
+                            self.stats = Some(stats);
+                            self.status_message = format!("{} - {}", self.i18n.t(TextKey::RefreshSuccess), platform_name());
+                        }
+                        Err(e) => {
+                            self.status_message = format!("{}: {}", self.i18n.t(TextKey::RefreshFailed), e);
+                        }
+                    }
+                }
             }
         }
-        self.last_refresh = Instant::now();
     }
 
     fn save_config(&mut self) {
@@ -106,9 +193,12 @@ impl NetOptApp {
 
 impl eframe::App for NetOptApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // 自动刷新
-        if self.app_config.auto_refresh && self.last_refresh.elapsed() > Duration::from_secs(self.app_config.refresh_interval) {
-            self.refresh_stats();
+        // 处理后台消息
+        self.process_bg_messages();
+
+        // 自动刷新（非阻塞）
+        if self.app_config.auto_refresh && !self.is_refreshing && self.last_refresh.elapsed() > Duration::from_secs(self.app_config.refresh_interval) {
+            self.refresh_stats_async();
         }
 
         // 顶部导航栏
@@ -169,8 +259,14 @@ impl eframe::App for NetOptApp {
                         self.app_config.auto_refresh = auto_refresh;
                         self.config_dirty = true;
                     }
-                    if ui.button(self.t(TextKey::RefreshNow)).clicked() {
-                        self.refresh_stats();
+                    // 刷新按钮（显示刷新状态）
+                    let refresh_btn = if self.is_refreshing {
+                        ui.add_enabled(false, egui::Button::new("⏳"))
+                    } else {
+                        ui.button(self.t(TextKey::RefreshNow))
+                    };
+                    if refresh_btn.clicked() {
+                        self.refresh_stats_async();
                     }
 
                     // 自动保存配置
@@ -191,8 +287,10 @@ impl eframe::App for NetOptApp {
             }
         });
 
-        // 持续刷新UI
-        if self.app_config.auto_refresh {
+        // 持续刷新UI（在后台刷新时更频繁地刷新以响应结果）
+        if self.is_refreshing {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        } else if self.app_config.auto_refresh {
             ctx.request_repaint_after(Duration::from_secs(1));
         }
     }
@@ -201,8 +299,8 @@ impl eframe::App for NetOptApp {
 impl NetOptApp {
     /// 仪表盘视图
     fn show_dashboard(&mut self, ui: &mut egui::Ui) {
-        if self.stats.is_none() {
-            self.refresh_stats();
+        if self.stats.is_none() && !self.is_refreshing {
+            self.refresh_stats_async();
         }
 
         let Some(stats) = &self.stats else {
