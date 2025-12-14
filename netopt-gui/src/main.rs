@@ -754,6 +754,50 @@ impl NetOptApp {
         ui.separator();
         ui.add_space(10.0);
 
+        // ===== 系统端口范围设置 =====
+        ui.group(|ui| {
+            ui.heading("🔌 系统端口范围");
+            ui.label(egui::RichText::new("调整临时端口范围，增加可用端口数量（需要管理员权限）").weak());
+            ui.add_space(5.0);
+
+            egui::Grid::new("port_range_grid").num_columns(3).show(ui, |ui| {
+                ui.label("最大用户端口 (MaxUserPort):");
+                let mut port = self.tcp_config.max_user_port.unwrap_or(5000);
+                if ui.add(egui::Slider::new(&mut port, 5000..=65534)).changed() {
+                    self.tcp_config.max_user_port = Some(port);
+                }
+                ui.label(egui::RichText::new("推荐: 65534").small().weak());
+                ui.end_row();
+
+                ui.label("TIME_WAIT 超时 (秒):");
+                let mut delay = self.tcp_config.time_wait_delay.unwrap_or(120);
+                if ui.add(egui::Slider::new(&mut delay, 30..=240)).changed() {
+                    self.tcp_config.time_wait_delay = Some(delay);
+                }
+                ui.label(egui::RichText::new("推荐: 30").small().weak());
+                ui.end_row();
+            });
+
+            ui.add_space(5.0);
+            ui.horizontal(|ui| {
+                if !self.is_admin {
+                    ui.label(egui::RichText::new("⚠️ 需要管理员权限才能应用").color(egui::Color32::YELLOW));
+                } else {
+                    if ui.button("📥 应用端口设置").clicked() {
+                        let config_mgr = create_config_manager();
+                        match config_mgr.apply_config(&self.tcp_config) {
+                            Ok(_) => self.status_message = "✅ 端口设置已应用，重启后生效".to_string(),
+                            Err(e) => self.status_message = format!("❌ 应用失败: {}", e),
+                        }
+                    }
+                }
+            });
+        });
+
+        ui.add_space(15.0);
+        ui.separator();
+        ui.add_space(10.0);
+
         // ===== 进程专用策略列表 =====
         ui.heading("📋 进程专用策略");
         ui.add_space(5.0);
