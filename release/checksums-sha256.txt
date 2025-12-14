@@ -1,3 +1,3 @@
-853479481e1e7a021de28bb0497653b3ec1dd972765c24ec45fcefc518acbf0a  smart-tcp-manager-1.0.4-aarch64-apple-darwin.tar.gz
-720e855eef01005c638caec0030dfb3bc070c4b2a1d9b8b8e90e6d49922cf7fd  smart-tcp-manager-1.0.4-x86_64-apple-darwin.tar.gz
-84165cfc9e9f0150ad3c7e682e9283da17c7a23f508dff472744866deeadffef  smart-tcp-manager-1.0.4-x86_64-pc-windows-gnu.zip
+875d58a236a1d4c4eead5d3c2dfededcfaa3798a4ad8d0e2dc5d4e615949bedd  smart-tcp-manager-1.0.6-aarch64-apple-darwin.tar.gz
+9a9ee66e8fac7adf77ca4ec23f6b621bead6ffe7c2e37e8ec81820332cb30a97  smart-tcp-manager-1.0.6-x86_64-apple-darwin.tar.gz
+92ac6b203f988601fa28f4cced68864f3e8030782df2ca256b80148f36118170  smart-tcp-manager-1.0.6-x86_64-pc-windows-gnu.zip

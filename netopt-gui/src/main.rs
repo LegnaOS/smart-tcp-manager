@@ -1,9 +1,10 @@
 //! NetOpt GUI - TCP连接优化管理界面
 //!
 //! 提供直观的GUI界面管理TCP连接，支持中英文切换
+//! 同时集成后台优化服务
 
 use eframe::egui;
-use netopt_core::platform::{create_monitor, create_config_manager, has_admin_privileges, platform_name};
+use netopt_core::platform::{create_monitor, create_config_manager, create_optimizer, has_admin_privileges, platform_name};
 use netopt_core::{SystemTcpStats, TcpState, TcpSystemConfig};
 use netopt_core::{I18n, Language, TextKey, AppConfig};
 use netopt_core::policy::{AppPolicy, ThresholdAction};
@@ -14,6 +15,8 @@ use std::time::{Duration, Instant};
 /// 后台线程消息
 enum BgMessage {
     StatsResult(Result<SystemTcpStats, String>),
+    /// 优化执行结果 (进程名, 动作类型, 关闭连接数, 错误信息)
+    OptimizeResult(String, String, usize, Option<String>),
 }
 
 fn main() -> eframe::Result<()> {
@@ -118,6 +121,10 @@ struct NetOptApp {
     bg_receiver: Receiver<BgMessage>,
     bg_sender: Sender<BgMessage>,
     is_refreshing: bool,
+
+    // 后台优化
+    last_optimize: Instant,
+    optimize_log: Vec<String>, // 优化日志（最近的优化操作记录）
 }
 
 impl NetOptApp {
@@ -146,6 +153,8 @@ impl NetOptApp {
             bg_receiver,
             bg_sender,
             is_refreshing: false,
+            last_optimize: Instant::now(),
+            optimize_log: Vec::new(),
         }
     }
 
@@ -166,6 +175,96 @@ impl NetOptApp {
         });
     }
 
+    /// 在后台执行优化（根据策略自动清理连接）
+    fn run_optimize_async(&mut self, stats: &SystemTcpStats) {
+        let policy_manager = self.app_config.policy_manager.clone();
+        let sender = self.bg_sender.clone();
+
+        // 检查每个进程是否需要优化
+        for proc_stats in &stats.by_process {
+            let policy = policy_manager.get_policy(&proc_stats.process_name).clone();
+
+            // 跳过白名单、未启用自动优化、或动作不是"自动优化"的进程
+            if !policy.auto_optimize || policy.threshold_action != ThresholdAction::Optimize {
+                continue;
+            }
+
+            let mut need_optimize_cw = false;
+            let mut need_optimize_tw = false;
+
+            // 检查 CLOSE_WAIT 阈值
+            if let Some(threshold) = policy.close_wait_threshold {
+                if proc_stats.close_wait > threshold {
+                    need_optimize_cw = true;
+                }
+            }
+
+            // 检查 TIME_WAIT 阈值
+            if let Some(threshold) = policy.time_wait_threshold {
+                if proc_stats.time_wait > threshold {
+                    need_optimize_tw = true;
+                }
+            }
+
+            if need_optimize_cw || need_optimize_tw {
+                let pid = proc_stats.pid;
+                let process_name = proc_stats.process_name.clone();
+                let sender = sender.clone();
+                let cw = need_optimize_cw;
+                let tw = need_optimize_tw;
+
+                std::thread::spawn(move || {
+                    let optimizer = create_optimizer();
+                    let mut total_closed = 0;
+                    let mut action_desc = String::new();
+                    let mut error_msg = None;
+
+                    // 清理 CLOSE_WAIT
+                    if cw {
+                        match optimizer.close_connections_by_state(pid, TcpState::CloseWait) {
+                            Ok(n) => {
+                                total_closed += n;
+                                action_desc.push_str(&format!("CLOSE_WAIT:{}", n));
+                            }
+                            Err(e) => {
+                                error_msg = Some(format!("CLOSE_WAIT清理失败: {}", e));
+                            }
+                        }
+                    }
+
+                    // 清理 TIME_WAIT
+                    if tw {
+                        match optimizer.close_connections_by_state(pid, TcpState::TimeWait) {
+                            Ok(n) => {
+                                total_closed += n;
+                                if !action_desc.is_empty() { action_desc.push_str(", "); }
+                                action_desc.push_str(&format!("TIME_WAIT:{}", n));
+                            }
+                            Err(e) => {
+                                let msg = format!("TIME_WAIT清理失败: {}", e);
+                                if let Some(ref mut err) = error_msg {
+                                    err.push_str("; ");
+                                    err.push_str(&msg);
+                                } else {
+                                    error_msg = Some(msg);
+                                }
+                            }
+                        }
+                    }
+
+                    let _ = sender.send(BgMessage::OptimizeResult(
+                        process_name,
+                        action_desc,
+                        total_closed,
+                        error_msg,
+                    ));
+                });
+            }
+        }
+
+        self.last_optimize = Instant::now();
+    }
+
     /// 处理后台消息
     fn process_bg_messages(&mut self) {
         while let Ok(msg) = self.bg_receiver.try_recv() {
@@ -175,12 +274,37 @@ impl NetOptApp {
                     self.last_refresh = Instant::now();
                     match result {
                         Ok(stats) => {
+                            // 检查是否需要执行优化（每30秒检查一次）
+                            if self.last_optimize.elapsed() > Duration::from_secs(30) {
+                                self.run_optimize_async(&stats);
+                            }
                             self.stats = Some(stats);
                             self.status_message = format!("{} - {}", self.i18n.t(TextKey::RefreshSuccess), platform_name());
                         }
                         Err(e) => {
                             self.status_message = format!("{}: {}", self.i18n.t(TextKey::RefreshFailed), e);
                         }
+                    }
+                }
+                BgMessage::OptimizeResult(process_name, action, closed, error) => {
+                    let now = chrono::Local::now().format("%H:%M:%S").to_string();
+                    let log_entry = if let Some(err) = error {
+                        format!("[{}] {} {} (错误: {})", now, process_name, action, err)
+                    } else if closed > 0 {
+                        format!("[{}] {} 清理 {} 连接", now, process_name, action)
+                    } else {
+                        format!("[{}] {} 无需清理", now, process_name)
+                    };
+
+                    // 保留最近20条日志
+                    self.optimize_log.push(log_entry);
+                    if self.optimize_log.len() > 20 {
+                        self.optimize_log.remove(0);
+                    }
+
+                    // 如果有实际清理，更新状态消息
+                    if closed > 0 {
+                        self.status_message = format!("✨ {} 已清理 {} 连接", process_name, closed);
                     }
                 }
             }

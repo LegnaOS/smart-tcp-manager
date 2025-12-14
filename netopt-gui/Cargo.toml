@@ -15,6 +15,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
 interprocess.workspace = true
+chrono = "0.4.42"
 
 # Windows: 隐藏控制台窗口
 [target.'cfg(windows)'.build-dependencies]

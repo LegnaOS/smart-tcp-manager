@@ -9,7 +9,7 @@
 
 set -e
 
-VERSION="${1:-1.0.4}"
+VERSION="${1:-1.0.6}"
 TAG="v$VERSION"
 RELEASE_DIR="release"
 REPO="LegnaOS/smart-tcp-manager"
