@@ -55,8 +55,12 @@ impl Default for AppPolicy {
             process_name: String::new(),
             exe_path: None,
             auto_optimize: true,
-            time_wait_threshold: Some(200),
-            close_wait_threshold: Some(50),
+            // TIME_WAIT 是正常的 TCP 关闭状态，会在 2-4 分钟后自动释放
+            // 设置较高阈值，避免过度干预正常的 TCP 行为
+            time_wait_threshold: Some(300),
+            // CLOSE_WAIT 表示应用程序未正确关闭连接，这才是真正需要清理的
+            // 这些连接不会自动消失，应该积极处理
+            close_wait_threshold: Some(30),
             max_connections: None,
             threshold_action: ThresholdAction::Alert,
             priority: 100,
@@ -67,12 +71,13 @@ impl Default for AppPolicy {
 
 impl AppPolicy {
     /// 创建高性能应用策略（如游戏、下载器）
+    /// TIME_WAIT 允许较多（正常行为），但 CLOSE_WAIT 严格控制
     pub fn high_performance(process_name: &str) -> Self {
         Self {
             process_name: process_name.to_string(),
             auto_optimize: true,
-            time_wait_threshold: Some(500),
-            close_wait_threshold: Some(100),
+            time_wait_threshold: Some(500),  // TIME_WAIT 宽松
+            close_wait_threshold: Some(50),  // CLOSE_WAIT 严格
             max_connections: None,
             threshold_action: ThresholdAction::Optimize,
             priority: 10,
@@ -81,12 +86,13 @@ impl AppPolicy {
     }
 
     /// 创建服务器应用策略（如Web服务器、数据库）
+    /// 服务器通常有更多连接，但 CLOSE_WAIT 仍需控制
     pub fn server(process_name: &str) -> Self {
         Self {
             process_name: process_name.to_string(),
             auto_optimize: true,
-            time_wait_threshold: Some(1000),
-            close_wait_threshold: Some(200),
+            time_wait_threshold: Some(1000), // 服务器 TIME_WAIT 更宽松
+            close_wait_threshold: Some(100), // CLOSE_WAIT 仍需控制
             max_connections: Some(10000),
             threshold_action: ThresholdAction::Alert,
             priority: 5,
@@ -104,6 +110,25 @@ impl AppPolicy {
             max_connections: Some(100),
             threshold_action: ThresholdAction::Optimize,
             priority: 1,
+            ..Default::default()
+        }
+    }
+
+    /// 创建采集/爬虫工具策略
+    /// 特点：大量短连接，需要积极释放 CLOSE_WAIT，对 TIME_WAIT 宽容
+    pub fn crawler(process_name: &str) -> Self {
+        Self {
+            process_name: process_name.to_string(),
+            auto_optimize: true,
+            // TIME_WAIT 是正常的，高并发采集会产生很多，不需要太激进
+            time_wait_threshold: Some(500),
+            // CLOSE_WAIT 必须积极处理！这是导致程序卡死的主因
+            // 设置较低阈值，一旦超过就清理
+            close_wait_threshold: Some(20),
+            max_connections: None, // 不限制最大连接
+            threshold_action: ThresholdAction::Optimize, // 自动优化
+            priority: 5,
+            note: "采集工具专用策略：积极清理 CLOSE_WAIT".to_string(),
             ..Default::default()
         }
     }

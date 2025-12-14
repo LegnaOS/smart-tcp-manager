@@ -458,8 +458,8 @@ impl NetOptApp {
             self.app_config.policy_manager.all_policies().iter()
             .map(|p| p.process_name.clone()).collect();
 
-        // Collect actions to perform after iteration
-        let mut add_policy_for: Option<String> = None;
+        // Collect actions to perform after iteration: (process_name, template_name)
+        let mut add_policy_for: Option<(String, String)> = None;
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             egui::Grid::new("proc_grid").striped(true).show(ui, |ui| {
@@ -484,11 +484,31 @@ impl NetOptApp {
                     ui.label(proc.listen.to_string());
                     ui.label(format!("{}%", proc.health_score));
 
-                    // 如果已有策略显示"已配置"，否则显示"添加策略"
+                    // 如果已有策略显示"已配置"，否则显示策略模板下拉菜单
                     if existing_policies.contains(&proc.process_name) {
                         ui.label(egui::RichText::new("✓ 已配置").color(egui::Color32::GREEN).small());
-                    } else if ui.button(t_add).clicked() {
-                        add_policy_for = Some(proc.process_name.clone());
+                    } else {
+                        let proc_name = proc.process_name.clone();
+                        egui::ComboBox::from_id_salt(format!("add_policy_{}", proc.pid))
+                            .selected_text(t_add)
+                            .width(100.0)
+                            .show_ui(ui, |ui| {
+                                if ui.selectable_label(false, "📊 默认策略").clicked() {
+                                    add_policy_for = Some((proc_name.clone(), "default".to_string()));
+                                }
+                                if ui.selectable_label(false, "🚀 高性能").clicked() {
+                                    add_policy_for = Some((proc_name.clone(), "high_performance".to_string()));
+                                }
+                                if ui.selectable_label(false, "🕷️ 采集/爬虫").clicked() {
+                                    add_policy_for = Some((proc_name.clone(), "crawler".to_string()));
+                                }
+                                if ui.selectable_label(false, "🖥️ 服务器").clicked() {
+                                    add_policy_for = Some((proc_name.clone(), "server".to_string()));
+                                }
+                                if ui.selectable_label(false, "🔒 受限").clicked() {
+                                    add_policy_for = Some((proc_name.clone(), "restricted".to_string()));
+                                }
+                            });
                     }
                     ui.end_row();
                 }
@@ -496,13 +516,16 @@ impl NetOptApp {
         });
 
         // Apply action outside of closure
-        if let Some(process_name) = add_policy_for {
-            let policy = AppPolicy::default();
-            self.app_config.policy_manager.set_policy(AppPolicy {
-                process_name: process_name.clone(),
-                ..policy
-            });
-            self.status_message = format!("{}: {}", t_added, process_name);
+        if let Some((process_name, template)) = add_policy_for {
+            let policy = match template.as_str() {
+                "high_performance" => AppPolicy::high_performance(&process_name),
+                "crawler" => AppPolicy::crawler(&process_name),
+                "server" => AppPolicy::server(&process_name),
+                "restricted" => AppPolicy::restricted(&process_name),
+                _ => AppPolicy { process_name: process_name.clone(), ..AppPolicy::default() },
+            };
+            self.app_config.policy_manager.set_policy(policy);
+            self.status_message = format!("{}: {} ({})", t_added, process_name, template);
             self.config_dirty = true;
         }
     }
@@ -520,29 +543,36 @@ impl NetOptApp {
             ui.label(self.t(TextKey::NoPolicies));
         } else {
             let t_delete = self.t(TextKey::DeletePolicy);
-            let t_save = self.t(TextKey::SavePolicy);
-            let t_saved = self.t(TextKey::PolicySaved);
+            let mut policy_to_delete: Option<String> = None;
 
             egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
                 for name in &policy_names {
-                    let mut policy = self.app_config.policy_manager.get_policy(name).clone();
-                    let original = policy.clone();
+                    let policy = self.app_config.policy_manager.get_policy(name).clone();
 
                     egui::CollapsingHeader::new(&policy.process_name)
                         .default_open(true)
                         .show(ui, |ui| {
-                            egui::Grid::new(format!("policy_{}", name)).num_columns(3).show(ui, |ui| {
-                                // 自动优化开关
+                            // 自动优化开关
+                            ui.horizontal(|ui| {
                                 ui.label(self.t(TextKey::AutoOptimize));
-                                ui.checkbox(&mut policy.auto_optimize, "");
-                                ui.label("");
-                                ui.end_row();
+                                let mut auto_opt = policy.auto_optimize;
+                                if ui.checkbox(&mut auto_opt, "").changed() {
+                                    let mut p = policy.clone();
+                                    p.auto_optimize = auto_opt;
+                                    self.app_config.policy_manager.set_policy(p);
+                                    self.config_dirty = true;
+                                }
+                            });
 
+                            egui::Grid::new(format!("policy_{}", name)).num_columns(3).show(ui, |ui| {
                                 // TIME_WAIT阈值
                                 ui.label(self.t(TextKey::TimeWaitThreshold));
                                 let mut tw = policy.time_wait_threshold.unwrap_or(200) as i32;
                                 if ui.add(egui::Slider::new(&mut tw, 50..=1000)).changed() {
-                                    policy.time_wait_threshold = Some(tw as usize);
+                                    let mut p = policy.clone();
+                                    p.time_wait_threshold = Some(tw as usize);
+                                    self.app_config.policy_manager.set_policy(p);
+                                    self.config_dirty = true;
                                 }
                                 ui.label(egui::RichText::new("推荐: 100-500").small().weak());
                                 ui.end_row();
@@ -551,7 +581,10 @@ impl NetOptApp {
                                 ui.label(self.t(TextKey::CloseWaitThreshold));
                                 let mut cw = policy.close_wait_threshold.unwrap_or(50) as i32;
                                 if ui.add(egui::Slider::new(&mut cw, 10..=200)).changed() {
-                                    policy.close_wait_threshold = Some(cw as usize);
+                                    let mut p = policy.clone();
+                                    p.close_wait_threshold = Some(cw as usize);
+                                    self.app_config.policy_manager.set_policy(p);
+                                    self.config_dirty = true;
                                 }
                                 ui.label(egui::RichText::new("推荐: 20-100").small().weak());
                                 ui.end_row();
@@ -560,54 +593,58 @@ impl NetOptApp {
                                 ui.label(self.t(TextKey::MaxConnections));
                                 let mut max = policy.max_connections.unwrap_or(0) as i32;
                                 if ui.add(egui::Slider::new(&mut max, 0..=10000).text("0=不限")).changed() {
-                                    policy.max_connections = if max > 0 { Some(max as usize) } else { None };
+                                    let mut p = policy.clone();
+                                    p.max_connections = if max > 0 { Some(max as usize) } else { None };
+                                    self.app_config.policy_manager.set_policy(p);
+                                    self.config_dirty = true;
                                 }
                                 ui.label(egui::RichText::new("推荐: 1000-5000").small().weak());
                                 ui.end_row();
 
                                 // 超阈值动作
                                 ui.label(self.t(TextKey::ThresholdAction));
+                                let current_action = policy.threshold_action;
                                 egui::ComboBox::from_id_salt(format!("action_{}", name))
-                                    .selected_text(match policy.threshold_action {
+                                    .selected_text(match current_action {
                                         ThresholdAction::Alert => self.t(TextKey::ActionAlert),
                                         ThresholdAction::Optimize => self.t(TextKey::ActionOptimize),
                                         ThresholdAction::RestartProcess => self.t(TextKey::ActionRestart),
                                         ThresholdAction::Ignore => self.t(TextKey::ActionIgnore),
                                     })
                                     .show_ui(ui, |ui| {
-                                        ui.selectable_value(&mut policy.threshold_action, ThresholdAction::Alert, self.t(TextKey::ActionAlert));
-                                        ui.selectable_value(&mut policy.threshold_action, ThresholdAction::Optimize, self.t(TextKey::ActionOptimize));
-                                        ui.selectable_value(&mut policy.threshold_action, ThresholdAction::Ignore, self.t(TextKey::ActionIgnore));
+                                        for action in [ThresholdAction::Alert, ThresholdAction::Optimize, ThresholdAction::Ignore] {
+                                            let label = match action {
+                                                ThresholdAction::Alert => self.t(TextKey::ActionAlert),
+                                                ThresholdAction::Optimize => self.t(TextKey::ActionOptimize),
+                                                ThresholdAction::Ignore => self.t(TextKey::ActionIgnore),
+                                                _ => continue,
+                                            };
+                                            if ui.selectable_label(current_action == action, label).clicked() && current_action != action {
+                                                let mut p = policy.clone();
+                                                p.threshold_action = action;
+                                                self.app_config.policy_manager.set_policy(p);
+                                                self.config_dirty = true;
+                                            }
+                                        }
                                     });
                                 ui.label("");
                                 ui.end_row();
                             });
 
                             ui.horizontal(|ui| {
-                                // 只有修改后才显示保存按钮
-                                let changed = policy.auto_optimize != original.auto_optimize
-                                    || policy.time_wait_threshold != original.time_wait_threshold
-                                    || policy.close_wait_threshold != original.close_wait_threshold
-                                    || policy.max_connections != original.max_connections
-                                    || policy.threshold_action != original.threshold_action;
-
-                                if changed {
-                                    if ui.button(egui::RichText::new(t_save).color(egui::Color32::GREEN)).clicked() {
-                                        self.app_config.policy_manager.set_policy(policy.clone());
-                                        self.status_message = format!("{}: {}", t_saved, name);
-                                        self.config_dirty = true;
-                                    }
-                                }
-
                                 if ui.button(t_delete).clicked() {
-                                    self.app_config.policy_manager.remove_policy(name);
-                                    self.status_message = format!("{}: {}", self.t(TextKey::PolicyDeleted), name);
-                                    self.config_dirty = true;
+                                    policy_to_delete = Some(name.clone());
                                 }
                             });
                         });
                 }
             });
+
+            if let Some(name) = policy_to_delete {
+                self.app_config.policy_manager.remove_policy(&name);
+                self.status_message = format!("{}: {}", self.t(TextKey::PolicyDeleted), name);
+                self.config_dirty = true;
+            }
         }
 
         ui.add_space(20.0);
