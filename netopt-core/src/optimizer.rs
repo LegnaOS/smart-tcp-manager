@@ -2,9 +2,8 @@
 //! 
 //! 提供按应用的动态TCP连接优化功能
 
-use crate::{Result, NetOptError, ProcessTcpStats, TcpConnection, TcpState};
+use crate::{Result, ProcessTcpStats, TcpConnection, TcpState};
 use crate::policy::{PolicyManager, AppPolicy, ThresholdAction};
-use crate::monitor::{ConnectionAnomaly, Severity, AnomalyType};
 
 /// 优化动作
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

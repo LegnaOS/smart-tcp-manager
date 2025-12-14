@@ -15,7 +15,6 @@ use std::collections::HashMap;
 #[cfg(target_os = "windows")]
 use windows::{
     Win32::System::Registry::*,
-    Win32::Foundation::*,
     core::PCWSTR,
 };
 
@@ -328,7 +327,10 @@ impl TcpMonitor for WindowsTcpMonitor {
     fn get_process_stats(&self, pid: u32) -> Result<ProcessTcpStats> {
         let connections = self.get_process_connections(pid)?;
         let process_name = if connections.is_empty() {
-            self.get_process_name(pid)
+            // 如果没有连接，批量查询获取进程名
+            let mut pids = std::collections::HashSet::new();
+            pids.insert(pid);
+            self.get_process_names_batch(&pids).get(&pid).cloned().unwrap_or_default()
         } else {
             connections[0].process_name.clone()
         };
@@ -428,16 +430,18 @@ impl WindowsConnectionOptimizer {
         }
     }
 
-    /// 将 IP 地址转换为 Windows API 需要的格式 (网络字节序的 u32)
+    /// 将 IP 地址字符串转换为 Windows API 需要的格式 (网络字节序的 u32)
     #[cfg(target_os = "windows")]
-    fn ip_to_u32(addr: &std::net::IpAddr) -> u32 {
-        match addr {
-            std::net::IpAddr::V4(v4) => {
-                let octets = v4.octets();
-                // 网络字节序 (大端)
-                u32::from_be_bytes(octets)
-            }
-            std::net::IpAddr::V6(_) => 0, // IPv6 需要不同处理
+    fn ip_str_to_u32(addr: &str) -> u32 {
+        use std::net::Ipv4Addr;
+        use std::str::FromStr;
+
+        if let Ok(v4) = Ipv4Addr::from_str(addr) {
+            let octets = v4.octets();
+            // 网络字节序 (大端)
+            u32::from_be_bytes(octets)
+        } else {
+            0 // 解析失败或 IPv6
         }
     }
 
@@ -452,6 +456,7 @@ impl ConnectionOptimizer for WindowsConnectionOptimizer {
     fn close_connection(&self, conn: &TcpConnection) -> Result<()> {
         #[cfg(target_os = "windows")]
         {
+            #[allow(unused_imports)]
             use std::mem::size_of;
 
             // MIB_TCPROW 结构体
@@ -471,9 +476,9 @@ impl ConnectionOptimizer for WindowsConnectionOptimizer {
             // 构造 MIB_TCPROW 结构
             let row = MIB_TCPROW {
                 dwState: MIB_TCP_STATE_DELETE_TCB,
-                dwLocalAddr: Self::ip_to_u32(&conn.local_addr),
+                dwLocalAddr: Self::ip_str_to_u32(&conn.local_addr),
                 dwLocalPort: Self::port_to_network_order(conn.local_port),
-                dwRemoteAddr: Self::ip_to_u32(&conn.remote_addr),
+                dwRemoteAddr: Self::ip_str_to_u32(&conn.remote_addr),
                 dwRemotePort: Self::port_to_network_order(conn.remote_port),
             };
 
@@ -523,8 +528,7 @@ impl ConnectionOptimizer for WindowsConnectionOptimizer {
 
     fn close_connections_by_state(&self, pid: u32, state: TcpState) -> Result<usize> {
         // 获取进程的所有连接
-        let stats = self.monitor.get_process_stats(pid)?;
-        let connections = stats.connections;
+        let connections = self.monitor.get_process_connections(pid)?;
 
         let mut closed = 0;
         for conn in connections {
@@ -556,7 +560,7 @@ impl ConnectionOptimizer for WindowsConnectionOptimizer {
 
                 let closed = self.close_connections_by_state(pid, TcpState::TimeWait)?;
                 connections_affected += closed;
-                action_type = ActionType::CloseConnections;
+                action_type = ActionType::CloseTimeWait;
             }
         }
 
@@ -573,7 +577,7 @@ impl ConnectionOptimizer for WindowsConnectionOptimizer {
 
                 let closed = self.close_connections_by_state(pid, TcpState::CloseWait)?;
                 connections_affected += closed;
-                action_type = ActionType::CloseConnections;
+                action_type = ActionType::CloseCloseWait;
             }
         }
 
