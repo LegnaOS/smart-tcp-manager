@@ -1,0 +1,20 @@
+[package]
+name = "netopt-service"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Background service for TCP optimization"
+
+[dependencies]
+netopt-core = { path = "../netopt-core" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+interprocess.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.7"
+

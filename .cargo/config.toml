@@ -1,0 +1,23 @@
+# 跨平台编译配置
+
+# Windows x86_64 target
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+# Windows ARM64
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+# macOS x86_64
+[target.x86_64-apple-darwin]
+
+# macOS ARM64 (Apple Silicon)
+[target.aarch64-apple-darwin]
+
+# 交叉编译别名
+[alias]
+build-win = "build --target x86_64-pc-windows-msvc --release"
+build-mac-intel = "build --target x86_64-apple-darwin --release"
+build-mac-arm = "build --target aarch64-apple-darwin --release"
+build-all-mac = "build --target x86_64-apple-darwin --target aarch64-apple-darwin --release"
+

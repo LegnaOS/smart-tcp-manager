@@ -1,0 +1,22 @@
+[package]
+name = "netopt-gui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "GUI application for TCP optimization management"
+
+[dependencies]
+netopt-core = { path = "../netopt-core" }
+eframe.workspace = true
+egui.workspace = true
+tokio = { workspace = true, features = ["rt", "sync"] }
+serde.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+interprocess.workspace = true
+
+# Windows: 隐藏控制台窗口
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "2.4"
+
