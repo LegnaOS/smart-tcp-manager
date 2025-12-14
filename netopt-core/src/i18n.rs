@@ -118,9 +118,18 @@ pub enum TextKey {
     HelpAbout,
     HelpAboutDesc,
     HelpFeatures,
-    HelpFeaturesList,
-    HelpUsage,
-    HelpUsageDesc,
+    HelpDashboard,
+    HelpDashboardDesc,
+    HelpProcesses,
+    HelpProcessesDesc,
+    HelpPolicies,
+    HelpPoliciesDesc,
+    HelpSettingsHelp,
+    HelpSettingsDesc,
+    HelpTcpStates,
+    HelpTcpStatesDesc,
+    HelpTroubleshooting,
+    HelpTroubleshootingDesc,
     HelpVersion,
 }
 
@@ -251,13 +260,22 @@ impl I18n {
 
         // 帮助
         texts.insert((lang, Help), "❓ 帮助");
-        texts.insert((lang, HelpTitle), "Smart TCP Manager 帮助");
-        texts.insert((lang, HelpAbout), "关于");
-        texts.insert((lang, HelpAboutDesc), "Smart TCP Manager 是一款跨平台的 TCP 连接管理工具，帮助您监控和优化系统的网络连接。");
-        texts.insert((lang, HelpFeatures), "主要功能");
-        texts.insert((lang, HelpFeaturesList), "• 📊 仪表盘：实时监控系统 TCP 连接状态\n• 📋 进程列表：查看每个进程的连接详情\n• 📜 策略管理：为不同应用配置优化策略\n• ⚙️ 系统设置：调整 TCP 系统参数");
-        texts.insert((lang, HelpUsage), "使用提示");
-        texts.insert((lang, HelpUsageDesc), "• 部分功能需要管理员权限\n• 建议定期检查 TIME_WAIT 和 CLOSE_WAIT 状态\n• 高性能配置适合服务器环境\n• 保守配置适合普通桌面使用");
+        texts.insert((lang, HelpTitle), "📖 使用指南");
+        texts.insert((lang, HelpAbout), "关于本软件");
+        texts.insert((lang, HelpAboutDesc), "Smart TCP Manager 是一款跨平台的 TCP 连接管理和优化工具。\n支持 Windows、macOS 和 Linux，帮助您实时监控网络连接状态，\n识别潜在问题，并优化 TCP 参数以提升网络性能。");
+        texts.insert((lang, HelpFeatures), "📋 功能说明");
+        texts.insert((lang, HelpDashboard), "📊 仪表盘");
+        texts.insert((lang, HelpDashboardDesc), "显示系统 TCP 连接的整体概览：\n  • 总连接数、可用端口数、端口使用率\n  • 各状态连接分布（ESTABLISHED、TIME_WAIT 等）\n  • Top 5 占用连接最多的进程及其健康度评分");
+        texts.insert((lang, HelpProcesses), "📋 进程列表");
+        texts.insert((lang, HelpProcessesDesc), "查看每个进程的详细连接信息：\n  • 进程名、PID、各状态连接数量\n  • 健康度评分（100分制，越高越好）\n  • 可为特定进程添加优化策略");
+        texts.insert((lang, HelpPolicies), "📜 策略管理");
+        texts.insert((lang, HelpPoliciesDesc), "为不同应用配置个性化的优化规则：\n  • TIME_WAIT 阈值：建议 100-500（超过会触发动作）\n  • CLOSE_WAIT 阈值：建议 20-100（CLOSE_WAIT 堆积通常表示程序未正确关闭连接）\n  • 最大连接数：限制单个进程的连接数量\n  • 超阈值动作：告警、自动优化、忽略");
+        texts.insert((lang, HelpSettingsHelp), "⚙️ 系统设置");
+        texts.insert((lang, HelpSettingsDesc), "调整操作系统级别的 TCP 参数（需要管理员权限）：\n  • 最大用户端口：默认 5000，建议 32768-65534\n  • TIME_WAIT 延迟：默认 120秒，建议 30-60秒\n  • 动态端口起始：默认 49152，可按需调整");
+        texts.insert((lang, HelpTcpStates), "🔍 TCP 状态说明");
+        texts.insert((lang, HelpTcpStatesDesc), "• ESTABLISHED（绿色）：正常活跃连接\n• TIME_WAIT（黄色）：等待关闭的连接，过多会占用端口\n• CLOSE_WAIT（红色）：对方已关闭，等待本地关闭，堆积说明程序有问题\n• LISTEN（蓝色）：监听端口，等待连接\n• FIN_WAIT/LAST_ACK：正在关闭中的连接");
+        texts.insert((lang, HelpTroubleshooting), "🛠 常见问题");
+        texts.insert((lang, HelpTroubleshootingDesc), "Q: 端口使用率过高怎么办？\nA: 增大最大用户端口数，减小 TIME_WAIT 延迟时间\n\nQ: 某进程 CLOSE_WAIT 很多？\nA: 这是程序问题，建议重启该进程或联系开发者\n\nQ: 修改设置后不生效？\nA: 部分设置需要重启系统才能生效");
         texts.insert((lang, HelpVersion), "版本");
     }
 
@@ -348,13 +366,22 @@ impl I18n {
 
         // Help
         texts.insert((lang, Help), "❓ Help");
-        texts.insert((lang, HelpTitle), "Smart TCP Manager Help");
+        texts.insert((lang, HelpTitle), "📖 User Guide");
         texts.insert((lang, HelpAbout), "About");
-        texts.insert((lang, HelpAboutDesc), "Smart TCP Manager is a cross-platform TCP connection management tool that helps you monitor and optimize your system's network connections.");
-        texts.insert((lang, HelpFeatures), "Main Features");
-        texts.insert((lang, HelpFeaturesList), "• 📊 Dashboard: Real-time TCP connection monitoring\n• 📋 Processes: View connection details per process\n• 📜 Policies: Configure optimization policies\n• ⚙️ Settings: Adjust TCP system parameters");
-        texts.insert((lang, HelpUsage), "Tips");
-        texts.insert((lang, HelpUsageDesc), "• Some features require admin privileges\n• Check TIME_WAIT and CLOSE_WAIT states regularly\n• High Performance config is suitable for servers\n• Conservative config is suitable for desktops");
+        texts.insert((lang, HelpAboutDesc), "Smart TCP Manager is a cross-platform TCP connection management and optimization tool.\nSupports Windows, macOS and Linux. Monitor network connections in real-time,\nidentify potential issues, and optimize TCP parameters for better performance.");
+        texts.insert((lang, HelpFeatures), "📋 Features");
+        texts.insert((lang, HelpDashboard), "📊 Dashboard");
+        texts.insert((lang, HelpDashboardDesc), "Overview of system TCP connections:\n  • Total connections, available ports, port usage\n  • Connection distribution by state (ESTABLISHED, TIME_WAIT, etc.)\n  • Top 5 processes with most connections and health scores");
+        texts.insert((lang, HelpProcesses), "📋 Process List");
+        texts.insert((lang, HelpProcessesDesc), "Detailed connection info for each process:\n  • Process name, PID, connection counts by state\n  • Health score (0-100, higher is better)\n  • Add optimization policies for specific processes");
+        texts.insert((lang, HelpPolicies), "📜 Policies");
+        texts.insert((lang, HelpPoliciesDesc), "Configure per-application optimization rules:\n  • TIME_WAIT threshold: recommended 100-500\n  • CLOSE_WAIT threshold: recommended 20-100 (accumulation indicates connection leak)\n  • Max connections: limit connections per process\n  • Threshold action: alert, auto-optimize, or ignore");
+        texts.insert((lang, HelpSettingsHelp), "⚙️ Settings");
+        texts.insert((lang, HelpSettingsDesc), "Adjust OS-level TCP parameters (requires admin):\n  • Max user ports: default 5000, recommended 32768-65534\n  • TIME_WAIT delay: default 120s, recommended 30-60s\n  • Dynamic port start: default 49152, adjust as needed");
+        texts.insert((lang, HelpTcpStates), "🔍 TCP States Explained");
+        texts.insert((lang, HelpTcpStatesDesc), "• ESTABLISHED (green): Active connections\n• TIME_WAIT (yellow): Waiting to close, too many will exhaust ports\n• CLOSE_WAIT (red): Peer closed, waiting for local close - accumulation indicates bug\n• LISTEN (blue): Listening ports waiting for connections\n• FIN_WAIT/LAST_ACK: Connections being closed");
+        texts.insert((lang, HelpTroubleshooting), "🛠 Troubleshooting");
+        texts.insert((lang, HelpTroubleshootingDesc), "Q: Port usage too high?\nA: Increase max user ports, reduce TIME_WAIT delay\n\nQ: Process has many CLOSE_WAIT?\nA: This is a program bug. Restart the process or contact developer\n\nQ: Settings don't take effect?\nA: Some settings require system reboot");
         texts.insert((lang, HelpVersion), "Version");
     }
 }

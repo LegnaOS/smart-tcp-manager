@@ -717,26 +717,56 @@ impl NetOptApp {
         ui.heading(self.t(TextKey::HelpTitle));
         ui.add_space(10.0);
 
-        // 关于
-        ui.heading(self.t(TextKey::HelpAbout));
-        ui.label(self.t(TextKey::HelpAboutDesc));
-        ui.add_space(15.0);
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            // 关于
+            egui::CollapsingHeader::new(egui::RichText::new(self.t(TextKey::HelpAbout)).strong())
+                .default_open(true)
+                .show(ui, |ui| {
+                    ui.label(self.t(TextKey::HelpAboutDesc));
+                });
+            ui.add_space(10.0);
 
-        // 主要功能
-        ui.heading(self.t(TextKey::HelpFeatures));
-        ui.label(self.t(TextKey::HelpFeaturesList));
-        ui.add_space(15.0);
+            // 功能说明
+            egui::CollapsingHeader::new(egui::RichText::new(self.t(TextKey::HelpFeatures)).strong())
+                .default_open(true)
+                .show(ui, |ui| {
+                    ui.collapsing(self.t(TextKey::HelpDashboard), |ui| {
+                        ui.label(self.t(TextKey::HelpDashboardDesc));
+                    });
+                    ui.collapsing(self.t(TextKey::HelpProcesses), |ui| {
+                        ui.label(self.t(TextKey::HelpProcessesDesc));
+                    });
+                    ui.collapsing(self.t(TextKey::HelpPolicies), |ui| {
+                        ui.label(self.t(TextKey::HelpPoliciesDesc));
+                    });
+                    ui.collapsing(self.t(TextKey::HelpSettingsHelp), |ui| {
+                        ui.label(self.t(TextKey::HelpSettingsDesc));
+                    });
+                });
+            ui.add_space(10.0);
 
-        // 使用提示
-        ui.heading(self.t(TextKey::HelpUsage));
-        ui.label(self.t(TextKey::HelpUsageDesc));
-        ui.add_space(15.0);
+            // TCP 状态说明
+            egui::CollapsingHeader::new(egui::RichText::new(self.t(TextKey::HelpTcpStates)).strong())
+                .default_open(false)
+                .show(ui, |ui| {
+                    ui.label(self.t(TextKey::HelpTcpStatesDesc));
+                });
+            ui.add_space(10.0);
 
-        // 版本信息
-        ui.separator();
-        ui.horizontal(|ui| {
-            ui.label(self.t(TextKey::HelpVersion));
-            ui.label(env!("CARGO_PKG_VERSION"));
+            // 常见问题
+            egui::CollapsingHeader::new(egui::RichText::new(self.t(TextKey::HelpTroubleshooting)).strong())
+                .default_open(false)
+                .show(ui, |ui| {
+                    ui.label(self.t(TextKey::HelpTroubleshootingDesc));
+                });
+            ui.add_space(20.0);
+
+            // 版本信息
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(self.t(TextKey::HelpVersion)).strong());
+                ui.label(env!("CARGO_PKG_VERSION"));
+            });
         });
     }
 }
