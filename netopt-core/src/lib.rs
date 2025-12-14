@@ -5,17 +5,23 @@
 //! - 进程级TCP连接监控
 //! - 智能连接优化策略
 //! - 无用连接自动清理
+//! - 国际化支持（中/英）
+//! - 配置持久化
 
 pub mod tcp_config;
 pub mod monitor;
 pub mod optimizer;
 pub mod policy;
 pub mod platform;
+pub mod i18n;
+pub mod config;
 
 pub use tcp_config::*;
 pub use monitor::*;
 pub use optimizer::*;
 pub use policy::*;
+pub use i18n::{I18n, Language, TextKey};
+pub use config::AppConfig;
 
 use thiserror::Error;
 

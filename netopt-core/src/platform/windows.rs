@@ -373,40 +373,178 @@ impl TcpMonitor for WindowsTcpMonitor {
 }
 
 /// Windows 连接优化器
-pub struct WindowsConnectionOptimizer;
+///
+/// 使用 SetTcpEntry API 来关闭 TCP 连接
+pub struct WindowsConnectionOptimizer {
+    monitor: WindowsTcpMonitor,
+}
 
 impl WindowsConnectionOptimizer {
     pub fn new() -> Self {
-        Self
+        Self {
+            monitor: WindowsTcpMonitor::new(),
+        }
+    }
+
+    /// 将 IP 地址转换为 Windows API 需要的格式 (网络字节序的 u32)
+    #[cfg(target_os = "windows")]
+    fn ip_to_u32(addr: &std::net::IpAddr) -> u32 {
+        match addr {
+            std::net::IpAddr::V4(v4) => {
+                let octets = v4.octets();
+                // 网络字节序 (大端)
+                u32::from_be_bytes(octets)
+            }
+            std::net::IpAddr::V6(_) => 0, // IPv6 需要不同处理
+        }
+    }
+
+    /// 将端口转换为网络字节序
+    #[cfg(target_os = "windows")]
+    fn port_to_network_order(port: u16) -> u32 {
+        ((port as u32) << 8) | ((port as u32) >> 8)
     }
 }
 
 impl ConnectionOptimizer for WindowsConnectionOptimizer {
-    fn close_connection(&self, _conn: &TcpConnection) -> Result<()> {
-        // 可以使用 SetTcpEntry 来关闭连接
+    fn close_connection(&self, conn: &TcpConnection) -> Result<()> {
         #[cfg(target_os = "windows")]
         {
-            // TODO: 实现使用 SetTcpEntry API
-            Err(NetOptError::UnsupportedPlatform(
-                "连接关闭功能开发中".into()
-            ))
+            use std::mem::size_of;
+
+            // MIB_TCPROW 结构体
+            #[repr(C)]
+            #[allow(non_snake_case)]
+            struct MIB_TCPROW {
+                dwState: u32,
+                dwLocalAddr: u32,
+                dwLocalPort: u32,
+                dwRemoteAddr: u32,
+                dwRemotePort: u32,
+            }
+
+            // 状态常量 - 设置为 MIB_TCP_STATE_DELETE_TCB (12) 来关闭连接
+            const MIB_TCP_STATE_DELETE_TCB: u32 = 12;
+
+            // 构造 MIB_TCPROW 结构
+            let row = MIB_TCPROW {
+                dwState: MIB_TCP_STATE_DELETE_TCB,
+                dwLocalAddr: Self::ip_to_u32(&conn.local_addr),
+                dwLocalPort: Self::port_to_network_order(conn.local_port),
+                dwRemoteAddr: Self::ip_to_u32(&conn.remote_addr),
+                dwRemotePort: Self::port_to_network_order(conn.remote_port),
+            };
+
+            // 调用 SetTcpEntry
+            type SetTcpEntryFn = unsafe extern "system" fn(*const MIB_TCPROW) -> u32;
+
+            let iphlpapi = unsafe {
+                windows::Win32::System::LibraryLoader::LoadLibraryW(
+                    windows::core::w!("iphlpapi.dll")
+                )
+            };
+
+            match iphlpapi {
+                Ok(handle) => {
+                    let proc_addr = unsafe {
+                        windows::Win32::System::LibraryLoader::GetProcAddress(
+                            handle,
+                            windows::core::s!("SetTcpEntry")
+                        )
+                    };
+
+                    if let Some(addr) = proc_addr {
+                        let set_tcp_entry: SetTcpEntryFn = unsafe { std::mem::transmute(addr) };
+                        let result = unsafe { set_tcp_entry(&row) };
+
+                        if result == 0 {
+                            Ok(())
+                        } else {
+                            Err(NetOptError::SystemError(
+                                format!("SetTcpEntry 失败, 错误码: {}. 需要管理员权限。", result)
+                            ))
+                        }
+                    } else {
+                        Err(NetOptError::SystemError("无法获取 SetTcpEntry 函数地址".into()))
+                    }
+                }
+                Err(e) => Err(NetOptError::SystemError(format!("加载 iphlpapi.dll 失败: {}", e)))
+            }
         }
+
         #[cfg(not(target_os = "windows"))]
-        Err(NetOptError::UnsupportedPlatform("Not Windows".into()))
+        {
+            let _ = conn;
+            Err(NetOptError::UnsupportedPlatform("Not Windows".into()))
+        }
     }
 
-    fn close_connections_by_state(&self, _pid: u32, _state: TcpState) -> Result<usize> {
-        // TODO: 批量关闭实现
-        Ok(0)
+    fn close_connections_by_state(&self, pid: u32, state: TcpState) -> Result<usize> {
+        // 获取进程的所有连接
+        let stats = self.monitor.get_process_stats(pid)?;
+        let connections = stats.connections;
+
+        let mut closed = 0;
+        for conn in connections {
+            if conn.state == state {
+                if self.close_connection(&conn).is_ok() {
+                    closed += 1;
+                }
+            }
+        }
+
+        Ok(closed)
     }
 
     fn optimize_process(&self, pid: u32, policy: &AppPolicy) -> Result<crate::optimizer::OptimizationAction> {
-        Ok(crate::optimizer::OptimizationAction {
+        use crate::optimizer::{OptimizationAction, ActionType};
+
+        let stats = self.monitor.get_process_stats(pid)?;
+        let mut connections_affected = 0;
+        let mut action_type = ActionType::None;
+        let mut reason = String::new();
+
+        // 检查 TIME_WAIT 阈值
+        if let Some(threshold) = policy.time_wait_threshold {
+            if stats.time_wait > threshold {
+                reason = format!(
+                    "TIME_WAIT({}) 超过阈值({}), 正在清理",
+                    stats.time_wait, threshold
+                );
+
+                let closed = self.close_connections_by_state(pid, TcpState::TimeWait)?;
+                connections_affected += closed;
+                action_type = ActionType::CloseConnections;
+            }
+        }
+
+        // 检查 CLOSE_WAIT 阈值
+        if let Some(threshold) = policy.close_wait_threshold {
+            if stats.close_wait > threshold {
+                if !reason.is_empty() {
+                    reason.push_str("; ");
+                }
+                reason.push_str(&format!(
+                    "CLOSE_WAIT({}) 超过阈值({}), 正在清理",
+                    stats.close_wait, threshold
+                ));
+
+                let closed = self.close_connections_by_state(pid, TcpState::CloseWait)?;
+                connections_affected += closed;
+                action_type = ActionType::CloseConnections;
+            }
+        }
+
+        if reason.is_empty() {
+            reason = "连接状态正常，无需优化".into();
+        }
+
+        Ok(OptimizationAction {
             pid,
             process_name: policy.process_name.clone(),
-            action_type: crate::optimizer::ActionType::None,
-            reason: "Windows连接优化功能开发中".into(),
-            connections_affected: 0,
+            action_type,
+            reason,
+            connections_affected,
             success: true,
             error_message: None,
         })

@@ -74,51 +74,55 @@ impl OptimizationEngine {
         }
         
         // TIME_WAIT 超阈值
-        if stats.time_wait > policy.time_wait_threshold {
-            let action = match policy.threshold_action {
-                ThresholdAction::Optimize => OptimizationAction {
+        if let Some(threshold) = policy.time_wait_threshold {
+            if stats.time_wait > threshold {
+                let action = match policy.threshold_action {
+                    ThresholdAction::Optimize => OptimizationAction {
+                        pid: stats.pid,
+                        process_name: stats.process_name.clone(),
+                        action_type: ActionType::CloseTimeWait,
+                        reason: format!(
+                            "TIME_WAIT({})超过阈值({})",
+                            stats.time_wait, threshold
+                        ),
+                        connections_affected: stats.time_wait - threshold,
+                        success: false,
+                        error_message: None,
+                    },
+                    ThresholdAction::Alert => OptimizationAction {
+                        pid: stats.pid,
+                        process_name: stats.process_name.clone(),
+                        action_type: ActionType::None,
+                        reason: format!(
+                            "告警: TIME_WAIT({})超过阈值({})",
+                            stats.time_wait, threshold
+                        ),
+                        connections_affected: 0,
+                        success: true,
+                        error_message: None,
+                    },
+                    _ => continue_action(stats),
+                };
+                actions.push(action);
+            }
+        }
+
+        // CLOSE_WAIT 超阈值（更严重）
+        if let Some(threshold) = policy.close_wait_threshold {
+            if stats.close_wait > threshold {
+                actions.push(OptimizationAction {
                     pid: stats.pid,
                     process_name: stats.process_name.clone(),
-                    action_type: ActionType::CloseTimeWait,
+                    action_type: ActionType::CloseCloseWait,
                     reason: format!(
-                        "TIME_WAIT({})超过阈值({})",
-                        stats.time_wait, policy.time_wait_threshold
+                        "CLOSE_WAIT({})超过阈值({})，可能存在连接泄漏",
+                        stats.close_wait, threshold
                     ),
-                    connections_affected: stats.time_wait - policy.time_wait_threshold,
+                    connections_affected: stats.close_wait,
                     success: false,
                     error_message: None,
-                },
-                ThresholdAction::Alert => OptimizationAction {
-                    pid: stats.pid,
-                    process_name: stats.process_name.clone(),
-                    action_type: ActionType::None,
-                    reason: format!(
-                        "告警: TIME_WAIT({})超过阈值({})",
-                        stats.time_wait, policy.time_wait_threshold
-                    ),
-                    connections_affected: 0,
-                    success: true,
-                    error_message: None,
-                },
-                _ => continue_action(stats),
-            };
-            actions.push(action);
-        }
-        
-        // CLOSE_WAIT 超阈值（更严重）
-        if stats.close_wait > policy.close_wait_threshold {
-            actions.push(OptimizationAction {
-                pid: stats.pid,
-                process_name: stats.process_name.clone(),
-                action_type: ActionType::CloseCloseWait,
-                reason: format!(
-                    "CLOSE_WAIT({})超过阈值({})，可能存在连接泄漏",
-                    stats.close_wait, policy.close_wait_threshold
-                ),
-                connections_affected: stats.close_wait,
-                success: false,
-                error_message: None,
-            });
+                });
+            }
         }
         
         actions
