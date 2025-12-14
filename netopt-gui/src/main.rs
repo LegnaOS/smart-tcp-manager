@@ -541,6 +541,99 @@ impl NetOptApp {
         ui.label(self.t(TextKey::PolicyDescription));
         ui.add_space(10.0);
 
+        // ===== 全局默认设置 =====
+        ui.group(|ui| {
+            ui.heading(self.t(TextKey::GlobalDefaultSettings));
+            ui.label(egui::RichText::new(self.t(TextKey::GlobalDefaultDesc)).weak());
+            ui.add_space(5.0);
+
+            let default_policy = self.app_config.policy_manager.default_policy.clone();
+
+            egui::Grid::new("global_default_grid").num_columns(3).show(ui, |ui| {
+                // TIME_WAIT阈值
+                ui.label(self.t(TextKey::TimeWaitThreshold));
+                let mut tw = default_policy.time_wait_threshold.unwrap_or(300) as i32;
+                if ui.add(egui::Slider::new(&mut tw, 50..=1000)).changed() {
+                    self.app_config.policy_manager.default_policy.time_wait_threshold = Some(tw as usize);
+                    self.config_dirty = true;
+                }
+                ui.label(egui::RichText::new("默认: 300").small().weak());
+                ui.end_row();
+
+                // CLOSE_WAIT阈值
+                ui.label(self.t(TextKey::CloseWaitThreshold));
+                let mut cw = default_policy.close_wait_threshold.unwrap_or(30) as i32;
+                if ui.add(egui::Slider::new(&mut cw, 5..=200)).changed() {
+                    self.app_config.policy_manager.default_policy.close_wait_threshold = Some(cw as usize);
+                    self.config_dirty = true;
+                }
+                ui.label(egui::RichText::new("默认: 30").small().weak());
+                ui.end_row();
+
+                // 超阈值动作
+                ui.label(self.t(TextKey::ThresholdAction));
+                let current_action = default_policy.threshold_action;
+                egui::ComboBox::from_id_salt("global_default_action")
+                    .selected_text(match current_action {
+                        ThresholdAction::Alert => self.t(TextKey::ActionAlert),
+                        ThresholdAction::Optimize => self.t(TextKey::ActionOptimize),
+                        ThresholdAction::RestartProcess => self.t(TextKey::ActionRestart),
+                        ThresholdAction::Ignore => self.t(TextKey::ActionIgnore),
+                    })
+                    .show_ui(ui, |ui| {
+                        for action in [ThresholdAction::Alert, ThresholdAction::Optimize, ThresholdAction::Ignore] {
+                            let label = match action {
+                                ThresholdAction::Alert => self.t(TextKey::ActionAlert),
+                                ThresholdAction::Optimize => self.t(TextKey::ActionOptimize),
+                                ThresholdAction::Ignore => self.t(TextKey::ActionIgnore),
+                                _ => continue,
+                            };
+                            if ui.selectable_label(current_action == action, label).clicked() && current_action != action {
+                                self.app_config.policy_manager.default_policy.threshold_action = action;
+                                self.config_dirty = true;
+                            }
+                        }
+                    });
+                ui.label("");
+                ui.end_row();
+            });
+
+            ui.add_space(5.0);
+            ui.horizontal(|ui| {
+                // 恢复默认值按钮
+                if ui.button(self.t(TextKey::ResetToDefault)).clicked() {
+                    self.app_config.policy_manager.default_policy = AppPolicy::default();
+                    self.status_message = self.t(TextKey::DefaultsReset).to_string();
+                    self.config_dirty = true;
+                }
+
+                // 应用到所有策略按钮
+                if ui.button(self.t(TextKey::ApplyToAll)).clicked() {
+                    let default = self.app_config.policy_manager.default_policy.clone();
+                    let policy_names: Vec<String> = self.app_config.policy_manager.all_policies()
+                        .iter().map(|p| p.process_name.clone()).collect();
+                    for name in policy_names {
+                        if let Some(mut policy) = self.app_config.policy_manager.remove_policy(&name) {
+                            policy.time_wait_threshold = default.time_wait_threshold;
+                            policy.close_wait_threshold = default.close_wait_threshold;
+                            policy.threshold_action = default.threshold_action;
+                            self.app_config.policy_manager.set_policy(policy);
+                        }
+                    }
+                    self.status_message = self.t(TextKey::AppliedToAll).to_string();
+                    self.config_dirty = true;
+                }
+            });
+        });
+
+        ui.add_space(15.0);
+        ui.separator();
+        ui.add_space(10.0);
+
+        // ===== 进程专用策略列表 =====
+        ui.heading("📋 进程专用策略");
+        ui.add_space(5.0);
+
         let policy_names: Vec<String> = self.app_config.policy_manager.all_policies()
             .iter().map(|p| p.process_name.clone()).collect();
 

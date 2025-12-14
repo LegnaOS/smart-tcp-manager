@@ -89,6 +89,14 @@ pub enum TextKey {
     SavePolicy,
     PolicySaved,
     PolicyTip,
+
+    // 全局默认设置
+    GlobalDefaultSettings,
+    GlobalDefaultDesc,
+    ResetToDefault,
+    DefaultsReset,
+    ApplyToAll,
+    AppliedToAll,
     
     // 设置
     TcpSettings,
@@ -236,6 +244,14 @@ impl I18n {
         texts.insert((lang, PolicySaved), "策略已保存");
         texts.insert((lang, PolicyTip), "💡 提示：在进程列表中点击\"添加策略\"为特定进程创建优化规则。每个进程只能有一个策略。");
 
+        // 全局默认设置
+        texts.insert((lang, GlobalDefaultSettings), "🌐 全局默认设置");
+        texts.insert((lang, GlobalDefaultDesc), "没有单独策略的进程将使用此默认设置");
+        texts.insert((lang, ResetToDefault), "🔄 恢复默认值");
+        texts.insert((lang, DefaultsReset), "已恢复默认值");
+        texts.insert((lang, ApplyToAll), "📋 应用到所有策略");
+        texts.insert((lang, AppliedToAll), "已应用到所有策略");
+
         // 设置
         texts.insert((lang, TcpSettings), "TCP系统参数设置");
         texts.insert((lang, AdminRequiredForSettings), "⚠️ 需要管理员权限才能修改系统设置");
@@ -341,6 +357,14 @@ impl I18n {
         texts.insert((lang, SavePolicy), "💾 Save");
         texts.insert((lang, PolicySaved), "Policy Saved");
         texts.insert((lang, PolicyTip), "💡 Tip: Click \"Add Policy\" in the process list to create optimization rules. Each process can only have one policy.");
+
+        // Global default settings
+        texts.insert((lang, GlobalDefaultSettings), "🌐 Global Default Settings");
+        texts.insert((lang, GlobalDefaultDesc), "Processes without specific policies will use these defaults");
+        texts.insert((lang, ResetToDefault), "🔄 Reset to Defaults");
+        texts.insert((lang, DefaultsReset), "Defaults Reset");
+        texts.insert((lang, ApplyToAll), "📋 Apply to All Policies");
+        texts.insert((lang, AppliedToAll), "Applied to All Policies");
 
         // Settings
         texts.insert((lang, TcpSettings), "TCP System Settings");
