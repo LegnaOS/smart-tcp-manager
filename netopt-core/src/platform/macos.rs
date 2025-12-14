@@ -147,13 +147,18 @@ impl MacOsTcpMonitor {
         if parts.len() < 9 {
             return None;
         }
-        
+
         // 解析本地地址和端口
         let (local_addr, local_port) = Self::parse_addr_port(parts[3])?;
         let (remote_addr, remote_port) = Self::parse_addr_port(parts[4])?;
         let state = Self::parse_state(parts[5]);
-        let pid = parts.get(8).and_then(|s| s.parse().ok()).unwrap_or(0);
-        
+
+        // macOS netstat -v 的格式是 "process:pid" 在第11列 (索引10)
+        // 例如: "PacketTunnel:6508" 或 "Code Helper (Plu:68231"
+        let (process_name, pid) = parts.get(10)
+            .map(|s| Self::parse_process_pid(s))
+            .unwrap_or((String::new(), 0));
+
         Some(TcpConnection {
             local_addr,
             local_port,
@@ -161,8 +166,19 @@ impl MacOsTcpMonitor {
             remote_port,
             state,
             pid,
-            process_name: String::new(), // 需要额外查询
+            process_name,
         })
+    }
+
+    /// 解析 "process:pid" 格式，如 "PacketTunnel:6508"
+    fn parse_process_pid(s: &str) -> (String, u32) {
+        if let Some(idx) = s.rfind(':') {
+            let name = s[..idx].to_string();
+            let pid = s[idx + 1..].parse().unwrap_or(0);
+            (name, pid)
+        } else {
+            (String::new(), 0)
+        }
     }
     
     fn parse_addr_port(s: &str) -> Option<(String, u16)> {
@@ -202,8 +218,9 @@ impl MacOsTcpMonitor {
 impl TcpMonitor for MacOsTcpMonitor {
     fn get_all_connections(&self) -> Result<Vec<TcpConnection>> {
         let mut connections = self.parse_netstat()?;
+        // 如果进程名为空，尝试用 ps 命令获取
         for conn in &mut connections {
-            if conn.pid > 0 {
+            if conn.pid > 0 && conn.process_name.is_empty() {
                 conn.process_name = self.get_process_name(conn.pid);
             }
         }

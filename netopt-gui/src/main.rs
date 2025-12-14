@@ -37,26 +37,52 @@ fn main() -> eframe::Result<()> {
     )
 }
 
-/// 嵌入的中文字体 (Noto Sans SC)
-const NOTO_SANS_SC: &[u8] = include_bytes!("../assets/NotoSansSC-Regular.otf");
-
 /// 设置支持中文的字体
+/// 按优先级尝试加载系统字体
 fn setup_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
 
-    // 使用嵌入的思源黑体
-    fonts.font_data.insert(
-        "noto_sans_sc".to_owned(),
-        egui::FontData::from_static(NOTO_SANS_SC),
-    );
+    // macOS 中文字体路径（按优先级排序）
+    #[cfg(target_os = "macos")]
+    let font_paths = [
+        "/System/Library/Fonts/PingFang.ttc",           // 苹方 - macOS 默认
+        "/System/Library/Fonts/STHeiti Light.ttc",      // 华文黑体
+        "/Library/Fonts/Hiragino Sans GB.ttc",          // 冬青黑体
+        "/Library/Fonts/Arial Unicode.ttf",             // Arial Unicode
+    ];
 
-    // 设置为首选字体
-    fonts.families.entry(egui::FontFamily::Proportional)
-        .or_default()
-        .insert(0, "noto_sans_sc".to_owned());
-    fonts.families.entry(egui::FontFamily::Monospace)
-        .or_default()
-        .push("noto_sans_sc".to_owned());
+    // Windows 中文字体路径
+    #[cfg(target_os = "windows")]
+    let font_paths = [
+        "C:\\Windows\\Fonts\\msyh.ttc",                 // 微软雅黑
+        "C:\\Windows\\Fonts\\simsun.ttc",               // 宋体
+        "C:\\Windows\\Fonts\\simhei.ttf",               // 黑体
+        "C:\\Windows\\Fonts\\ARIALUNI.TTF",             // Arial Unicode
+    ];
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let font_paths: [&str; 0] = [];
+
+    // 尝试加载字体
+    for path in font_paths {
+        if let Ok(font_data) = std::fs::read(path) {
+            fonts.font_data.insert(
+                "chinese".to_owned(),
+                egui::FontData::from_owned(font_data),
+            );
+
+            // 设置为首选字体
+            fonts.families.entry(egui::FontFamily::Proportional)
+                .or_default()
+                .insert(0, "chinese".to_owned());
+            fonts.families.entry(egui::FontFamily::Monospace)
+                .or_default()
+                .push("chinese".to_owned());
+
+            tracing::info!("已加载中文字体: {}", path);
+            break;
+        }
+    }
 
     ctx.set_fonts(fonts);
 }
@@ -67,8 +93,9 @@ enum View {
     #[default]
     Dashboard,
     Processes,
-    Settings,
     Policies,
+    Settings,
+    Help,
 }
 
 /// 主应用状态
@@ -201,6 +228,9 @@ impl eframe::App for NetOptApp {
                 if ui.selectable_label(self.current_view == View::Settings, self.t(TextKey::Settings)).clicked() {
                     self.current_view = View::Settings;
                 }
+                if ui.selectable_label(self.current_view == View::Help, self.t(TextKey::Help)).clicked() {
+                    self.current_view = View::Help;
+                }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // 语言切换
@@ -223,7 +253,7 @@ impl eframe::App for NetOptApp {
                     ui.separator();
 
                     if !self.is_admin {
-                        ui.label(egui::RichText::new(self.t(TextKey::AdminRequired)).color(egui::Color32::YELLOW));
+                        ui.label(egui::RichText::new(self.t(TextKey::AdminRequired)).color(egui::Color32::from_rgb(255, 100, 100)));
                     } else {
                         ui.label(egui::RichText::new(self.t(TextKey::AdminGranted)).color(egui::Color32::GREEN));
                     }
@@ -266,6 +296,7 @@ impl eframe::App for NetOptApp {
                 View::Processes => self.show_processes(ui),
                 View::Policies => self.show_policies(ui),
                 View::Settings => self.show_settings(ui),
+                View::Help => self.show_help(ui),
             }
         });
 
@@ -306,7 +337,7 @@ impl NetOptApp {
             let color = if stats.port_usage_percent > 80.0 {
                 egui::Color32::RED
             } else if stats.port_usage_percent > 50.0 {
-                egui::Color32::YELLOW
+                egui::Color32::from_rgb(255, 150, 50) // 橙色，比黄色更显眼
             } else {
                 egui::Color32::LIGHT_GREEN
             };
@@ -370,7 +401,7 @@ impl NetOptApp {
                 ui.label(proc.pid.to_string());
                 ui.label(proc.total_connections.to_string());
 
-                let tw_color = if proc.time_wait > 100 { egui::Color32::YELLOW } else { egui::Color32::WHITE };
+                let tw_color = if proc.time_wait > 100 { egui::Color32::from_rgb(255, 150, 50) } else { egui::Color32::WHITE };
                 ui.colored_label(tw_color, proc.time_wait.to_string());
 
                 let cw_color = if proc.close_wait > 50 { egui::Color32::RED } else { egui::Color32::WHITE };
@@ -379,7 +410,7 @@ impl NetOptApp {
                 let health_color = if proc.health_score >= 80 {
                     egui::Color32::GREEN
                 } else if proc.health_score >= 50 {
-                    egui::Color32::YELLOW
+                    egui::Color32::from_rgb(255, 150, 50)
                 } else {
                     egui::Color32::RED
                 };
@@ -422,6 +453,11 @@ impl NetOptApp {
         let t_add = self.t(TextKey::AddPolicy);
         let t_added = self.t(TextKey::PolicyAdded);
 
+        // Collect existing policies for checking
+        let existing_policies: std::collections::HashSet<String> =
+            self.app_config.policy_manager.all_policies().iter()
+            .map(|p| p.process_name.clone()).collect();
+
         // Collect actions to perform after iteration
         let mut add_policy_for: Option<String> = None;
 
@@ -435,7 +471,7 @@ impl NetOptApp {
                 ui.label(egui::RichText::new("CLOSE_WAIT").strong());
                 ui.label(egui::RichText::new("LISTEN").strong());
                 ui.label(egui::RichText::new(t_health).strong());
-                ui.label(egui::RichText::new(t_add).strong());
+                ui.label(egui::RichText::new("").strong()); // 策略列
                 ui.end_row();
 
                 for proc in &processes {
@@ -448,7 +484,10 @@ impl NetOptApp {
                     ui.label(proc.listen.to_string());
                     ui.label(format!("{}%", proc.health_score));
 
-                    if ui.button(t_add).clicked() {
+                    // 如果已有策略显示"已配置"，否则显示"添加策略"
+                    if existing_policies.contains(&proc.process_name) {
+                        ui.label(egui::RichText::new("✓ 已配置").color(egui::Color32::GREEN).small());
+                    } else if ui.button(t_add).clicked() {
                         add_policy_for = Some(proc.process_name.clone());
                     }
                     ui.end_row();
@@ -474,91 +513,109 @@ impl NetOptApp {
         ui.label(self.t(TextKey::PolicyDescription));
         ui.add_space(10.0);
 
-        let policies: Vec<_> = self.app_config.policy_manager.all_policies().iter().map(|p| (*p).clone()).collect();
+        let policy_names: Vec<String> = self.app_config.policy_manager.all_policies()
+            .iter().map(|p| p.process_name.clone()).collect();
 
-        if policies.is_empty() {
+        if policy_names.is_empty() {
             ui.label(self.t(TextKey::NoPolicies));
-            return;
+        } else {
+            let t_delete = self.t(TextKey::DeletePolicy);
+            let t_save = self.t(TextKey::SavePolicy);
+            let t_saved = self.t(TextKey::PolicySaved);
+
+            egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
+                for name in &policy_names {
+                    let mut policy = self.app_config.policy_manager.get_policy(name).clone();
+                    let original = policy.clone();
+
+                    egui::CollapsingHeader::new(&policy.process_name)
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            egui::Grid::new(format!("policy_{}", name)).num_columns(3).show(ui, |ui| {
+                                // 自动优化开关
+                                ui.label(self.t(TextKey::AutoOptimize));
+                                ui.checkbox(&mut policy.auto_optimize, "");
+                                ui.label("");
+                                ui.end_row();
+
+                                // TIME_WAIT阈值
+                                ui.label(self.t(TextKey::TimeWaitThreshold));
+                                let mut tw = policy.time_wait_threshold.unwrap_or(200) as i32;
+                                if ui.add(egui::Slider::new(&mut tw, 50..=1000)).changed() {
+                                    policy.time_wait_threshold = Some(tw as usize);
+                                }
+                                ui.label(egui::RichText::new("推荐: 100-500").small().weak());
+                                ui.end_row();
+
+                                // CLOSE_WAIT阈值
+                                ui.label(self.t(TextKey::CloseWaitThreshold));
+                                let mut cw = policy.close_wait_threshold.unwrap_or(50) as i32;
+                                if ui.add(egui::Slider::new(&mut cw, 10..=200)).changed() {
+                                    policy.close_wait_threshold = Some(cw as usize);
+                                }
+                                ui.label(egui::RichText::new("推荐: 20-100").small().weak());
+                                ui.end_row();
+
+                                // 最大连接数
+                                ui.label(self.t(TextKey::MaxConnections));
+                                let mut max = policy.max_connections.unwrap_or(0) as i32;
+                                if ui.add(egui::Slider::new(&mut max, 0..=10000).text("0=不限")).changed() {
+                                    policy.max_connections = if max > 0 { Some(max as usize) } else { None };
+                                }
+                                ui.label(egui::RichText::new("推荐: 1000-5000").small().weak());
+                                ui.end_row();
+
+                                // 超阈值动作
+                                ui.label(self.t(TextKey::ThresholdAction));
+                                egui::ComboBox::from_id_salt(format!("action_{}", name))
+                                    .selected_text(match policy.threshold_action {
+                                        ThresholdAction::Alert => self.t(TextKey::ActionAlert),
+                                        ThresholdAction::Optimize => self.t(TextKey::ActionOptimize),
+                                        ThresholdAction::RestartProcess => self.t(TextKey::ActionRestart),
+                                        ThresholdAction::Ignore => self.t(TextKey::ActionIgnore),
+                                    })
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(&mut policy.threshold_action, ThresholdAction::Alert, self.t(TextKey::ActionAlert));
+                                        ui.selectable_value(&mut policy.threshold_action, ThresholdAction::Optimize, self.t(TextKey::ActionOptimize));
+                                        ui.selectable_value(&mut policy.threshold_action, ThresholdAction::Ignore, self.t(TextKey::ActionIgnore));
+                                    });
+                                ui.label("");
+                                ui.end_row();
+                            });
+
+                            ui.horizontal(|ui| {
+                                // 只有修改后才显示保存按钮
+                                let changed = policy.auto_optimize != original.auto_optimize
+                                    || policy.time_wait_threshold != original.time_wait_threshold
+                                    || policy.close_wait_threshold != original.close_wait_threshold
+                                    || policy.max_connections != original.max_connections
+                                    || policy.threshold_action != original.threshold_action;
+
+                                if changed {
+                                    if ui.button(egui::RichText::new(t_save).color(egui::Color32::GREEN)).clicked() {
+                                        self.app_config.policy_manager.set_policy(policy.clone());
+                                        self.status_message = format!("{}: {}", t_saved, name);
+                                        self.config_dirty = true;
+                                    }
+                                }
+
+                                if ui.button(t_delete).clicked() {
+                                    self.app_config.policy_manager.remove_policy(name);
+                                    self.status_message = format!("{}: {}", self.t(TextKey::PolicyDeleted), name);
+                                    self.config_dirty = true;
+                                }
+                            });
+                        });
+                }
+            });
         }
 
-        let t_auto = self.t(TextKey::AutoOptimize);
-        let t_enabled = self.t(TextKey::Enabled);
-        let t_disabled = self.t(TextKey::Disabled);
-        let t_tw = self.t(TextKey::TimeWaitThreshold);
-        let t_cw = self.t(TextKey::CloseWaitThreshold);
-        let t_max = self.t(TextKey::MaxConnections);
-        let t_unlimited = self.t(TextKey::Unlimited);
-        let t_action = self.t(TextKey::ThresholdAction);
-        let t_alert = self.t(TextKey::ActionAlert);
-        let t_optimize = self.t(TextKey::ActionOptimize);
-        let t_restart = self.t(TextKey::ActionRestart);
-        let t_ignore = self.t(TextKey::ActionIgnore);
-        let t_delete = self.t(TextKey::DeletePolicy);
-
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for policy in &policies {
-                egui::CollapsingHeader::new(&policy.process_name)
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        egui::Grid::new(format!("policy_{}", policy.process_name)).show(ui, |ui| {
-                            ui.label(format!("{}:", t_auto));
-                            ui.label(if policy.auto_optimize { t_enabled } else { t_disabled });
-                            ui.end_row();
-
-                            ui.label(format!("{}:", t_tw));
-                            ui.label(policy.time_wait_threshold.map(|v| v.to_string()).unwrap_or_else(|| t_unlimited.to_string()));
-                            ui.end_row();
-
-                            ui.label(format!("{}:", t_cw));
-                            ui.label(policy.close_wait_threshold.map(|v| v.to_string()).unwrap_or_else(|| t_unlimited.to_string()));
-                            ui.end_row();
-
-                            ui.label(format!("{}:", t_max));
-                            ui.label(policy.max_connections.map(|v| v.to_string()).unwrap_or_else(|| t_unlimited.to_string()));
-                            ui.end_row();
-
-                            ui.label(format!("{}:", t_action));
-                            ui.label(match policy.threshold_action {
-                                ThresholdAction::Alert => t_alert,
-                                ThresholdAction::Optimize => t_optimize,
-                                ThresholdAction::RestartProcess => t_restart,
-                                ThresholdAction::Ignore => t_ignore,
-                            });
-                            ui.end_row();
-                        });
-
-                        ui.horizontal(|ui| {
-                            if ui.button(t_delete).clicked() {
-                                self.app_config.policy_manager.remove_policy(&policy.process_name);
-                                self.status_message = format!("{}: {}", self.t(TextKey::PolicyDeleted), policy.process_name);
-                                self.config_dirty = true;
-                            }
-                        });
-                    });
-            }
-        });
-
         ui.add_space(20.0);
+        ui.separator();
+        ui.add_space(10.0);
 
-        // 预设策略模板
-        ui.heading(self.t(TextKey::QuickTemplates));
-        ui.horizontal(|ui| {
-            if ui.button(self.t(TextKey::GameMode)).clicked() {
-                self.app_config.policy_manager.set_policy(AppPolicy::high_performance("game"));
-                self.status_message = self.t(TextKey::TemplateAdded).into();
-                self.config_dirty = true;
-            }
-            if ui.button(self.t(TextKey::ServerMode)).clicked() {
-                self.app_config.policy_manager.set_policy(AppPolicy::server("server"));
-                self.status_message = self.t(TextKey::TemplateAdded).into();
-                self.config_dirty = true;
-            }
-            if ui.button(self.t(TextKey::RestrictedMode)).clicked() {
-                self.app_config.policy_manager.set_policy(AppPolicy::restricted("suspicious"));
-                self.status_message = self.t(TextKey::TemplateAdded).into();
-                self.config_dirty = true;
-            }
-        });
+        // 说明文字
+        ui.label(egui::RichText::new(self.t(TextKey::PolicyTip)).weak());
     }
 
     /// 系统设置视图
@@ -567,7 +624,7 @@ impl NetOptApp {
 
         if !self.is_admin {
             ui.colored_label(
-                egui::Color32::YELLOW,
+                egui::Color32::from_rgb(255, 100, 100),
                 self.t(TextKey::AdminRequiredForSettings)
             );
             ui.add_space(10.0);
@@ -650,8 +707,36 @@ impl NetOptApp {
             }
 
             if mgr_requires_reboot() {
-                ui.colored_label(egui::Color32::YELLOW, self.t(TextKey::RebootRequired));
+                ui.colored_label(egui::Color32::from_rgb(255, 150, 50), self.t(TextKey::RebootRequired));
             }
+        });
+    }
+
+    /// 帮助视图
+    fn show_help(&self, ui: &mut egui::Ui) {
+        ui.heading(self.t(TextKey::HelpTitle));
+        ui.add_space(10.0);
+
+        // 关于
+        ui.heading(self.t(TextKey::HelpAbout));
+        ui.label(self.t(TextKey::HelpAboutDesc));
+        ui.add_space(15.0);
+
+        // 主要功能
+        ui.heading(self.t(TextKey::HelpFeatures));
+        ui.label(self.t(TextKey::HelpFeaturesList));
+        ui.add_space(15.0);
+
+        // 使用提示
+        ui.heading(self.t(TextKey::HelpUsage));
+        ui.label(self.t(TextKey::HelpUsageDesc));
+        ui.add_space(15.0);
+
+        // 版本信息
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label(self.t(TextKey::HelpVersion));
+            ui.label(env!("CARGO_PKG_VERSION"));
         });
     }
 }

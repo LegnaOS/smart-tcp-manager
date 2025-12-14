@@ -86,11 +86,9 @@ pub enum TextKey {
     ActionIgnore,
     DeletePolicy,
     PolicyDeleted,
-    QuickTemplates,
-    GameMode,
-    ServerMode,
-    RestrictedMode,
-    TemplateAdded,
+    SavePolicy,
+    PolicySaved,
+    PolicyTip,
     
     // 设置
     TcpSettings,
@@ -113,6 +111,17 @@ pub enum TextKey {
     // 语言
     LanguageLabel,
     LanguageChanged,
+
+    // 帮助
+    Help,
+    HelpTitle,
+    HelpAbout,
+    HelpAboutDesc,
+    HelpFeatures,
+    HelpFeaturesList,
+    HelpUsage,
+    HelpUsageDesc,
+    HelpVersion,
 }
 
 /// 国际化管理器
@@ -212,13 +221,11 @@ impl I18n {
         texts.insert((lang, ActionOptimize), "自动优化");
         texts.insert((lang, ActionRestart), "重启进程");
         texts.insert((lang, ActionIgnore), "忽略");
-        texts.insert((lang, DeletePolicy), "🗑 删除策略");
+        texts.insert((lang, DeletePolicy), "🗑 删除");
         texts.insert((lang, PolicyDeleted), "已删除策略");
-        texts.insert((lang, QuickTemplates), "快速应用模板");
-        texts.insert((lang, GameMode), "🎮 游戏模式");
-        texts.insert((lang, ServerMode), "🖥 服务器模式");
-        texts.insert((lang, RestrictedMode), "🔒 限制模式");
-        texts.insert((lang, TemplateAdded), "已添加模板");
+        texts.insert((lang, SavePolicy), "💾 保存修改");
+        texts.insert((lang, PolicySaved), "策略已保存");
+        texts.insert((lang, PolicyTip), "💡 提示：在进程列表中点击\"添加策略\"为特定进程创建优化规则。每个进程只能有一个策略。");
 
         // 设置
         texts.insert((lang, TcpSettings), "TCP系统参数设置");
@@ -241,6 +248,17 @@ impl I18n {
         // 语言
         texts.insert((lang, LanguageLabel), "🌐 语言");
         texts.insert((lang, LanguageChanged), "语言已切换");
+
+        // 帮助
+        texts.insert((lang, Help), "❓ 帮助");
+        texts.insert((lang, HelpTitle), "Smart TCP Manager 帮助");
+        texts.insert((lang, HelpAbout), "关于");
+        texts.insert((lang, HelpAboutDesc), "Smart TCP Manager 是一款跨平台的 TCP 连接管理工具，帮助您监控和优化系统的网络连接。");
+        texts.insert((lang, HelpFeatures), "主要功能");
+        texts.insert((lang, HelpFeaturesList), "• 📊 仪表盘：实时监控系统 TCP 连接状态\n• 📋 进程列表：查看每个进程的连接详情\n• 📜 策略管理：为不同应用配置优化策略\n• ⚙️ 系统设置：调整 TCP 系统参数");
+        texts.insert((lang, HelpUsage), "使用提示");
+        texts.insert((lang, HelpUsageDesc), "• 部分功能需要管理员权限\n• 建议定期检查 TIME_WAIT 和 CLOSE_WAIT 状态\n• 高性能配置适合服务器环境\n• 保守配置适合普通桌面使用");
+        texts.insert((lang, HelpVersion), "版本");
     }
 
     fn load_english(texts: &mut HashMap<(Language, TextKey), &'static str>) {
@@ -302,11 +320,9 @@ impl I18n {
         texts.insert((lang, ActionIgnore), "Ignore");
         texts.insert((lang, DeletePolicy), "🗑 Delete");
         texts.insert((lang, PolicyDeleted), "Policy Deleted");
-        texts.insert((lang, QuickTemplates), "Quick Templates");
-        texts.insert((lang, GameMode), "🎮 Game Mode");
-        texts.insert((lang, ServerMode), "🖥 Server Mode");
-        texts.insert((lang, RestrictedMode), "🔒 Restricted Mode");
-        texts.insert((lang, TemplateAdded), "Template Added");
+        texts.insert((lang, SavePolicy), "💾 Save");
+        texts.insert((lang, PolicySaved), "Policy Saved");
+        texts.insert((lang, PolicyTip), "💡 Tip: Click \"Add Policy\" in the process list to create optimization rules. Each process can only have one policy.");
 
         // Settings
         texts.insert((lang, TcpSettings), "TCP System Settings");
@@ -329,6 +345,17 @@ impl I18n {
         // Language
         texts.insert((lang, LanguageLabel), "🌐 Language");
         texts.insert((lang, LanguageChanged), "Language Changed");
+
+        // Help
+        texts.insert((lang, Help), "❓ Help");
+        texts.insert((lang, HelpTitle), "Smart TCP Manager Help");
+        texts.insert((lang, HelpAbout), "About");
+        texts.insert((lang, HelpAboutDesc), "Smart TCP Manager is a cross-platform TCP connection management tool that helps you monitor and optimize your system's network connections.");
+        texts.insert((lang, HelpFeatures), "Main Features");
+        texts.insert((lang, HelpFeaturesList), "• 📊 Dashboard: Real-time TCP connection monitoring\n• 📋 Processes: View connection details per process\n• 📜 Policies: Configure optimization policies\n• ⚙️ Settings: Adjust TCP system parameters");
+        texts.insert((lang, HelpUsage), "Tips");
+        texts.insert((lang, HelpUsageDesc), "• Some features require admin privileges\n• Check TIME_WAIT and CLOSE_WAIT states regularly\n• High Performance config is suitable for servers\n• Conservative config is suitable for desktops");
+        texts.insert((lang, HelpVersion), "Version");
     }
 }
 

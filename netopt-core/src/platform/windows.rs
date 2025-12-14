@@ -177,11 +177,16 @@ impl TcpConfigManager for WindowsTcpConfigManager {
 
 /// Windows TCP监控器
 /// 使用 IP Helper API (GetExtendedTcpTable)
-pub struct WindowsTcpMonitor;
+pub struct WindowsTcpMonitor {
+    /// 进程名缓存 (PID -> 进程名)
+    process_cache: std::sync::Mutex<std::collections::HashMap<u32, String>>,
+}
 
 impl WindowsTcpMonitor {
     pub fn new() -> Self {
-        Self
+        Self {
+            process_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
+        }
     }
 
     /// 使用 netstat 命令获取连接（备用方案）
@@ -202,14 +207,65 @@ impl WindowsTcpMonitor {
             }
         }
 
-        // 获取进程名
+        // 收集需要查询的唯一 PID
+        let unique_pids: std::collections::HashSet<u32> = connections.iter()
+            .filter(|c| c.pid > 0)
+            .map(|c| c.pid)
+            .collect();
+
+        // 批量获取进程名（使用缓存）
+        let process_names = self.get_process_names_batch(&unique_pids);
+
+        // 应用进程名
         for conn in &mut connections {
             if conn.pid > 0 {
-                conn.process_name = self.get_process_name(conn.pid);
+                if let Some(name) = process_names.get(&conn.pid) {
+                    conn.process_name = name.clone();
+                }
             }
         }
 
         Ok(connections)
+    }
+
+    /// 批量获取进程名，使用缓存减少 tasklist 调用
+    fn get_process_names_batch(&self, pids: &std::collections::HashSet<u32>) -> std::collections::HashMap<u32, String> {
+        use std::process::Command;
+
+        let mut result = std::collections::HashMap::new();
+        let mut cache = self.process_cache.lock().unwrap();
+
+        // 先从缓存获取
+        let mut missing_pids: Vec<u32> = Vec::new();
+        for &pid in pids {
+            if let Some(name) = cache.get(&pid) {
+                result.insert(pid, name.clone());
+            } else {
+                missing_pids.push(pid);
+            }
+        }
+
+        // 如果有缺失的 PID，一次性调用 tasklist 获取所有进程
+        if !missing_pids.is_empty() {
+            if let Ok(output) = Command::new("tasklist").args(["/FO", "CSV", "/NH"]).output() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines() {
+                    // 格式: "进程名","PID",...
+                    let parts: Vec<&str> = line.split(',').collect();
+                    if parts.len() >= 2 {
+                        let name = parts[0].trim_matches('"').to_string();
+                        if let Ok(pid) = parts[1].trim_matches('"').parse::<u32>() {
+                            cache.insert(pid, name.clone());
+                            if pids.contains(&pid) {
+                                result.insert(pid, name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        result
     }
 
     fn parse_netstat_line(&self, line: &str) -> Option<TcpConnection> {
@@ -256,20 +312,6 @@ impl WindowsTcpMonitor {
             "CLOSED" => TcpState::Closed,
             _ => TcpState::Unknown,
         }
-    }
-
-    fn get_process_name(&self, pid: u32) -> String {
-        use std::process::Command;
-
-        Command::new("tasklist")
-            .args(["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"])
-            .output()
-            .ok()
-            .and_then(|o| {
-                let s = String::from_utf8_lossy(&o.stdout);
-                s.split(',').next().map(|n| n.trim_matches('"').to_string())
-            })
-            .unwrap_or_default()
     }
 }
 
