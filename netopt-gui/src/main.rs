@@ -37,44 +37,26 @@ fn main() -> eframe::Result<()> {
     )
 }
 
+/// 嵌入的中文字体 (Noto Sans SC)
+const NOTO_SANS_SC: &[u8] = include_bytes!("../assets/NotoSansSC-Regular.otf");
+
 /// 设置支持中文的字体
 fn setup_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
 
-    // 加载系统中文字体
-    #[cfg(target_os = "macos")]
-    {
-        // macOS: 使用苹方或华文黑体
-        if let Ok(font_data) = std::fs::read("/System/Library/Fonts/PingFang.ttc") {
-            fonts.font_data.insert(
-                "chinese".to_owned(),
-                egui::FontData::from_owned(font_data),
-            );
-            fonts.families.entry(egui::FontFamily::Proportional)
-                .or_default()
-                .insert(0, "chinese".to_owned());
-            fonts.families.entry(egui::FontFamily::Monospace)
-                .or_default()
-                .push("chinese".to_owned());
-        }
-    }
+    // 使用嵌入的思源黑体
+    fonts.font_data.insert(
+        "noto_sans_sc".to_owned(),
+        egui::FontData::from_static(NOTO_SANS_SC),
+    );
 
-    #[cfg(target_os = "windows")]
-    {
-        // Windows: 使用微软雅黑
-        if let Ok(font_data) = std::fs::read("C:\\Windows\\Fonts\\msyh.ttc") {
-            fonts.font_data.insert(
-                "chinese".to_owned(),
-                egui::FontData::from_owned(font_data),
-            );
-            fonts.families.entry(egui::FontFamily::Proportional)
-                .or_default()
-                .insert(0, "chinese".to_owned());
-            fonts.families.entry(egui::FontFamily::Monospace)
-                .or_default()
-                .push("chinese".to_owned());
-        }
-    }
+    // 设置为首选字体
+    fonts.families.entry(egui::FontFamily::Proportional)
+        .or_default()
+        .insert(0, "noto_sans_sc".to_owned());
+    fonts.families.entry(egui::FontFamily::Monospace)
+        .or_default()
+        .push("noto_sans_sc".to_owned());
 
     ctx.set_fonts(fonts);
 }
